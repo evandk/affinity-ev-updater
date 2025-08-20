@@ -23,10 +23,7 @@ function coerceObj(x) {
   return x || {};
 }
 
-const safeNum = (x) => {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-};
+const safeNum = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null; };
 
 function computeEV(min, max, pPct) {
   let mi = safeNum(min), ma = safeNum(max);
@@ -45,9 +42,35 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: "Missing AFFINITY_V2_TOKEN" });
     }
 
-    // Affinity webhooks often nest body twice
-    const outer = coerceObj(req.body);
-    const payload = coerceObj(outer.body) || outer;
+    // Robust body parsing: handle raw stream, JSON, and form-encoded inputs
+    async function readRawBody(rq) {
+      return await new Promise((resolve, reject) => {
+        let data = "";
+        rq.on("data", chunk => { data += chunk; });
+        rq.on("end", () => resolve(data));
+        rq.on("error", reject);
+      });
+    }
+
+    const contentType = String(req.headers?.["content-type"] || "").toLowerCase();
+    let outer = {};
+    if (req.body != null && req.body !== "") {
+      outer = coerceObj(req.body);
+    } else {
+      const raw = await readRawBody(req);
+      if (contentType.includes("application/x-www-form-urlencoded")) {
+        outer = Object.fromEntries(new URLSearchParams(raw));
+      } else {
+        outer = coerceObj(raw);
+      }
+    }
+
+    // Affinity v1 sends { type, body: {...} }; curl tests may send {...} directly
+    const bodyCandidate = coerceObj(outer.body);
+    const dataCandidate = coerceObj(outer.data);
+    const payload = Object.keys(bodyCandidate).length
+      ? bodyCandidate
+      : (Object.keys(dataCandidate).length ? dataCandidate : outer);
 
     const listEntryId = String(
       payload.list_entry_id ??
@@ -55,7 +78,10 @@ export default async function handler(req, res) {
       payload?.data?.list_entry_id ??
       ""
     );
+<<<<<<< HEAD
     const eventListId = Number(payload?.field?.list_id ?? payload?.list_id ?? LIST_ID);
+=======
+    const eventListId = Number(payload?.field?.list_id ?? payload?.list_id ?? outer?.field?.list_id ?? LIST_ID);
 
     if (!listEntryId) return res.status(200).json({ skipped: true, reason: "no_list_entry_id", payload });
     if (eventListId !== LIST_ID) return res.status(200).json({ skipped: true, reason: "different_list", eventListId });
@@ -87,6 +113,9 @@ export default async function handler(req, res) {
     const data = e?.response?.data || e.message;
     return res.status(200).json({ ok: false, error: { status, data } });
   }
+<<<<<<< HEAD
 }
 
 
+=======
+}
