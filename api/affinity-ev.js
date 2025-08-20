@@ -36,6 +36,8 @@ function computeEV(min, max, pPct) {
   return Math.round(m * p);
 }
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 export default async function handler(req, res) {
   try {
     if (!process.env.AFFINITY_V2_TOKEN) {
@@ -113,9 +115,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: false, step: "post_ev", status: post.status, data: post.data, listEntryId, min, max, p, ev });
     }
 
-    // Verify
-    const { data: after } = await V2.get(`/lists/${LIST_ID}/list-entries/${listEntryId}/fields`);
-    const persisted = safeNum(new Map((after?.data ?? []).map(f => [String(f.id), f.value?.data])).get(FID_EV));
+    // Verify with small retries (eventual consistency)
+    let persisted = null;
+    for (let i = 0; i < 4; i++) {
+      const { data: after } = await V2.get(`/lists/${LIST_ID}/list-entries/${listEntryId}/fields`);
+      persisted = safeNum(new Map((after?.data ?? []).map(f => [String(f.id), f.value?.data])).get(FID_EV));
+      if (persisted != null) break;
+      await sleep(200 * Math.pow(2, i));
+    }
 
     return res.status(200).json({ ok: true, listEntryId, min, max, p, ev, persisted });
   } catch (e) {
