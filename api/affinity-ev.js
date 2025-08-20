@@ -42,7 +42,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: "Missing AFFINITY_V2_TOKEN" });
     }
 
-    // Robust body parsing: handle raw stream, JSON, and form-encoded inputs
+    // Robust body parsing: handle raw stream, JSON, Buffer, and form-encoded inputs
     async function readRawBody(rq) {
       return await new Promise((resolve, reject) => {
         let data = "";
@@ -55,7 +55,20 @@ export default async function handler(req, res) {
     const contentType = String(req.headers?.["content-type"] || "").toLowerCase();
     let outer = {};
     if (req.body != null && req.body !== "") {
-      outer = coerceObj(req.body);
+      if (typeof req.body === "string") {
+        outer = coerceObj(req.body);
+      } else if (typeof Buffer !== "undefined" && Buffer.isBuffer && Buffer.isBuffer(req.body)) {
+        const s = req.body.toString("utf8");
+        if (contentType.includes("application/x-www-form-urlencoded")) {
+          outer = Object.fromEntries(new URLSearchParams(s));
+        } else {
+          outer = coerceObj(s);
+        }
+      } else if (typeof req.body === "object") {
+        outer = req.body;
+      } else {
+        outer = {};
+      }
     } else {
       const raw = await readRawBody(req);
       if (contentType.includes("application/x-www-form-urlencoded")) {
@@ -78,9 +91,6 @@ export default async function handler(req, res) {
       payload?.data?.list_entry_id ??
       ""
     );
-<<<<<<< HEAD
-    const eventListId = Number(payload?.field?.list_id ?? payload?.list_id ?? LIST_ID);
-=======
     const eventListId = Number(payload?.field?.list_id ?? payload?.list_id ?? outer?.field?.list_id ?? LIST_ID);
 
     if (!listEntryId) return res.status(200).json({ skipped: true, reason: "no_list_entry_id", payload });
@@ -113,9 +123,4 @@ export default async function handler(req, res) {
     const data = e?.response?.data || e.message;
     return res.status(200).json({ ok: false, error: { status, data } });
   }
-<<<<<<< HEAD
-}
-
-
-=======
 }
